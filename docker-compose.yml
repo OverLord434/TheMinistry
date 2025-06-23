@@ -1,0 +1,127 @@
+services:
+  db:
+    image: postgres:17
+    container_name: postgres_db
+    networks:
+      - ministrynetwork
+    restart: always
+    environment:
+      POSTGRES_DB: ministry_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: kalina2005
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    image: cr.yandex/crpd0q6eg4jk7ofuhjcj/ministryback:latest
+    container_name: django_app
+    volumes:
+      - static_volume:/app/staticfiles  
+      - media_volume:/app/media 
+    networks:
+      - ministrynetwork
+    restart: always
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_NAME=ministry_db
+      - DB_USER=postgres
+      - DB_PASS=kalina2005
+      - DB_PORT=5432
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 backend.asgi:application"]
+
+  frontend:
+    image: cr.yandex/crpd0q6eg4jk7ofuhjcj/ministryfront:latest
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: react_app
+    networks:
+      - ministrynetwork
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://backend:8000
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: django_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+    - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    - static_volume:/app/staticfiles
+    - media_volume:/app/media
+    depends_on:
+      - backend
+    networks:
+      - ministrynetwork
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - ministrynetwork
+    volumes:
+      - redis_data:/data
+
+  celery:
+    image: cr.yandex/crpd0q6eg4jk7ofuhjcj/ministryback:latest
+    container_name: celery_worker
+    restart: always
+    command: >
+      sh -c "celery -A backend worker -l info"
+    depends_on:
+      - backend
+      - redis
+      - db
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    networks:
+      - ministrynetwork
+    environment:
+      - DB_HOST=db
+      - DB_NAME=ministry_db
+      - DB_USER=postgres
+      - DB_PASS=kalina2005
+      - DB_PORT=5432
+
+  celery-beat:
+    image: cr.yandex/crpd0q6eg4jk7ofuhjcj/ministryback:latest
+    container_name: celery_beat
+    restart: always
+    command: >
+      sh -c "celery -A backend beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    depends_on:
+      - backend
+      - redis
+      - db
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    networks:
+      - ministrynetwork
+    environment:
+      - DB_HOST=db
+      - DB_NAME=ministry_db
+      - DB_USER=postgres
+      - DB_PASS=kalina2005
+      - DB_PORT=5432
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  redis_data:
+
+networks:
+  ministrynetwork:
+    driver: bridge

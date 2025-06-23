@@ -1,0 +1,89 @@
+# Virtual Environment
+.venv/
+venv/
+
+# Environment variables
+.env
+*.env
+.env.local
+.env.*.local
+
+# Python cache and build files
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ОС-специфичные файлы
+.DS_Store
+Thumbs.db
+
+# pipenv
+Pipfile.lock
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# pytest
+.pytest_cache/
+.cache/
+
+# coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# pip-wheel metadata
+pip-wheel-metadata/
+
+# virtualenvwrapper
+.venv3/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# logs
+logs/
+*.log
+
+
+# dotenv overrides
+.envrc
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Django migrations: игнорировать все .py и .pyc там, кроме __init__.py
+**/migrations/*.py
+!**/migrations/__init__.py
+**/migrations/*.pyc
