@@ -1,11 +1,49 @@
 import io
 import re
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from django.core.mail import EmailMessage
 from django.conf import settings
 from datetime import datetime
+from .config import sections
+
+SECTION_PATHS = {s['name']: s['path'] for s in sections}
+
+# Placeholder excerpt from Rosobrnadzor guidelines.
+DOC_EXCERPT = (
+    "По данному разделу обнаружены отсутствующие атрибуты. "
+    "Пожалуйста ознакомьтесь с полной версией документа по ссылке: "
+    "https://obrnadzor.gov.ru/wp-content/uploads/2024/09/"
+    "metodicheskie-rekomendaczii-predstavleniya-informaczii-ob-"
+    "obrazovatelnoj-or....pdf"
+)
+
+
+def add_hyperlink(paragraph, url: str, text: str | None = None):
+    """Add a clickable hyperlink to a paragraph."""
+    text = text or url
+    part = paragraph.part
+    r_id = part.relate_to(url, RT.HYPERLINK, is_external=True)
+
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+
+    new_run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    rStyle = OxmlElement('w:rStyle')
+    rStyle.set(qn('w:val'), 'Hyperlink')
+    rPr.append(rStyle)
+    new_run.append(rPr)
+    t = OxmlElement('w:t')
+    t.text = text
+    new_run.append(t)
+    hyperlink.append(new_run)
+    paragraph._p.append(hyperlink)
+    return hyperlink
 
 def _split_top_level(s: str) -> list[str]:
     """
@@ -78,6 +116,14 @@ def generate_word(results):
     heading_run.font.size = Pt(14)
     heading_run.bold = True
 
+    base_url = results[0].get('Адрес сайта', '') if results else ''
+    if base_url:
+        link_para = document.add_paragraph()
+        link_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        link_para.add_run('Сайт организации: ')
+        add_hyperlink(link_para, base_url, base_url)
+        document.add_paragraph('')
+
     # Сбор общей статистики
     total_found = 0
     total_missing = 0
@@ -108,12 +154,22 @@ def generate_word(results):
         # Форматируем атрибуты
         found_formatted, _ = format_attributes(item.get('Найдено атрибутов', ''))
         missing_formatted, _ = format_attributes(item.get('Отсутствуют', ''))
-        required_formatted, _ = format_attributes(item.get('Все обязательные', ''))
 
         # Заголовок раздела
         section_header = document.add_paragraph()
         section_header.add_run(f"🔍 {item['Раздел сайта']}").bold = True
-        section_header.add_run(f" [Статус: {item['Статус']}]" )
+        section_header.add_run(f" [Статус: {item['Статус']}]")
+        link_line = document.add_paragraph()
+        url = item.get('Адрес сайта')
+        if url:
+            link_line.add_run('Ссылка: ')
+            add_hyperlink(link_line, url, url)
+        else:
+            expected = base_url.rstrip('/') + SECTION_PATHS.get(item['Раздел сайта'], '')
+            warn_run = link_line.add_run(
+                f"Возможно у вас есть данный раздел, но он должен находиться по ссылке: {expected}"
+            )
+            warn_run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
 
         # Блок с атрибутами
         document.add_paragraph().add_run("Найдено:").bold = True
@@ -122,8 +178,10 @@ def generate_word(results):
         document.add_paragraph().add_run("Отсутствуют:").bold = True
         document.add_paragraph(missing_formatted)
         
-        document.add_paragraph().add_run("Обязательные:").bold = True
-        document.add_paragraph(required_formatted)
+        if 'Нет данных' not in missing_formatted:
+            snippet = document.add_paragraph()
+            run = snippet.add_run(DOC_EXCERPT)
+            run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
 
         # Разделитель между секциями
         if idx < len(results) - 1:
